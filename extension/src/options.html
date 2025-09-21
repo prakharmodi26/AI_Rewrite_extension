@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Actions — Options</title>
+    <link rel="stylesheet" href="overlay.css" />
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0F172A; background: #ffffff; }
+      .container { max-width: 720px; margin: 24px auto; padding: 16px; }
+      .card { background: #F7F9FC; border: 1px solid #E5E7EB; border-radius: 12px; box-shadow: 0 8px 20px rgba(15,23,42,0.08); padding: 20px; }
+      h1 { font-size: 20px; margin: 0 0 12px; }
+      .row { display: flex; gap: 12px; align-items: center; margin: 12px 0; }
+      .row label { width: 220px; color: #475569; }
+      input[type="text"], input[type="password"], select { flex: 1; padding: 10px 12px; border: 1px solid #E5E7EB; border-radius: 10px; outline: none; }
+      input:focus, select:focus { outline: 2px solid #93C5FD; }
+      .actions { display: flex; gap: 8px; margin-top: 8px; }
+      .btn { background: #2563EB; color: #fff; border: none; border-radius: 10px; padding: 10px 14px; cursor: pointer; }
+      .btn:hover { background: #1D4ED8; }
+      .muted { color: #475569; font-size: 12px; }
+      .status { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid #E5E7EB; }
+      .status.ok { color: #16A34A; border-color: #16A34A; }
+      .status.err { color: #DC2626; border-color: #DC2626; }
+      code { background: #eef3ff; padding: 2px 6px; border-radius: 6px; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="card">
+        <h1>AI Actions — Options</h1>
+        <div class="row">
+          <label for="serverUrl">Server URL</label>
+          <input id="serverUrl" type="text" placeholder="http://localhost:8080" />
+          <span id="urlStatus" class="status">—</span>
+        </div>
+        <div class="row">
+          <label for="defaultTone">Default Rewrite Tone</label>
+          <select id="defaultTone">
+            <option value="clear">Clear & Professional</option>
+            <option value="friendly">Friendly</option>
+            <option value="concise">Concise</option>
+            <option value="formal">Formal</option>
+            <option value="grammar">Grammar only</option>
+          </select>
+        </div>
+        <div class="row">
+          <label for="redact">Redact</label>
+          <input id="redact" type="checkbox" />
+        </div>
+        <div class="row">
+          <label for="secret">HMAC Secret <span class="muted">(DEV-ONLY)</span></label>
+          <input id="secret" type="password" placeholder="Enter secret for demo only" />
+        </div>
+        <div class="row">
+          <label for="installId">Install ID</label>
+          <input id="installId" type="text" readonly />
+          <button id="regen" class="btn" aria-label="Regenerate Install ID">Regenerate</button>
+        </div>
+        <div class="actions">
+          <button id="save" class="btn">Save</button>
+          <button id="test" class="btn" style="background:#0ea5e9">Test Connection</button>
+          <span id="msg" class="muted"></span>
+        </div>
+        <p class="muted" style="margin-top:12px">Security: This demo stores the HMAC secret in <code>chrome.storage.local</code> for convenience. Do not ship this to production. Use a trusted proxy or alternative flow.</p>
+      </div>
+    </div>
+    <script type="module" src="options.js"></script>
+  </body>
+  </html>

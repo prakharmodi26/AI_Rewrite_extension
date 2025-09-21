@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "AI Actions (Demo)",
+  "version": "0.1.0",
+  "description": "Right-click to rewrite or summarize selected text using a backend transformer.",
+  "action": {
+    "default_title": "AI Actions"
+  },
+  "permissions": [
+    "contextMenus",
+    "activeTab",
+    "scripting",
+    "storage",
+    "clipboardWrite"
+  ],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content.js"],
+      "css": ["src/overlay.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "src/options.html",
+  "commands": {
+    "rewrite_default": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+R",
+        "mac": "Command+Shift+R"
+      },
+      "description": "AI Rewrite (Clear & Professional)"
+    },
+    "summarize": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+S",
+        "mac": "Command+Shift+S"
+      },
+      "description": "AI Summarize (3–5 bullets)"
+    }
+  }
+}
