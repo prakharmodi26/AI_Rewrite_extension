@@ -1,8 +1,9 @@
 // extension/src/storage.ts
 var DEFAULTS = {
   serverUrl: "http://localhost:8080",
-  defaultTone: "clear",
-  redact: false
+  defaultTone: "friendly",
+  redact: false,
+  dismissOnOutsideClick: true
 };
 async function ensureInstallId() {
   const { installId } = await chrome.storage.local.get("installId");
@@ -12,13 +13,17 @@ async function ensureInstallId() {
   return id;
 }
 async function getSettings() {
-  const sync = await chrome.storage.sync.get(["serverUrl", "defaultTone", "redact"]);
+  const sync = await chrome.storage.sync.get(["serverUrl", "defaultTone", "redact", "dismissOnOutsideClick"]);
   const local = await chrome.storage.local.get(["secret", "installId"]);
   const installId = local.installId || await ensureInstallId();
+  const allowedTones = ["friendly", "formal", "confident", "persuasive", "casual"];
+  const rawTone = sync.defaultTone || "";
+  const safeTone = allowedTones.includes(rawTone) ? rawTone : DEFAULTS.defaultTone;
   return {
     serverUrl: sync.serverUrl || DEFAULTS.serverUrl,
-    defaultTone: sync.defaultTone || DEFAULTS.defaultTone,
+    defaultTone: safeTone,
     redact: typeof sync.redact === "boolean" ? sync.redact : DEFAULTS.redact,
+    dismissOnOutsideClick: typeof sync.dismissOnOutsideClick === "boolean" ? sync.dismissOnOutsideClick : DEFAULTS.dismissOnOutsideClick,
     secret: typeof local.secret === "string" ? local.secret : void 0,
     installId
   };
@@ -48,6 +53,7 @@ async function init() {
   const serverUrl = document.getElementById("serverUrl");
   const defaultTone = document.getElementById("defaultTone");
   const redact = document.getElementById("redact");
+  const dismissOnOutsideClick = document.getElementById("dismissOnOutsideClick");
   const secret = document.getElementById("secret");
   const installId = document.getElementById("installId");
   const regen = document.getElementById("regen");
@@ -57,8 +63,10 @@ async function init() {
   const urlStatus = document.getElementById("urlStatus");
   const settings = await getSettings();
   serverUrl.value = settings.serverUrl;
-  defaultTone.value = settings.defaultTone;
+  const available = Array.from(defaultTone.options).map((o) => o.value);
+  defaultTone.value = available.includes(settings.defaultTone) ? settings.defaultTone : "friendly";
   redact.checked = settings.redact;
+  dismissOnOutsideClick.checked = !!settings.dismissOnOutsideClick;
   secret.value = settings.secret || "";
   installId.value = settings.installId;
   function showUrlStatus() {
@@ -76,7 +84,7 @@ async function init() {
     setTimeout(() => msg.textContent = "", 1500);
   });
   save.addEventListener("click", async () => {
-    await setSyncSettings({ serverUrl: serverUrl.value, defaultTone: defaultTone.value, redact: redact.checked });
+    await setSyncSettings({ serverUrl: serverUrl.value, defaultTone: defaultTone.value, redact: redact.checked, dismissOnOutsideClick: dismissOnOutsideClick.checked });
     await setLocalSettings({ secret: secret.value });
     msg.textContent = "Saved.";
     setTimeout(() => msg.textContent = "", 1200);

@@ -1,6 +1,6 @@
-# AI Actions Chrome Extension (Demo)
+# AI Actions — Chrome Extension
 
-Chrome Manifest V3 extension that rewrites or summarizes selected text via a backend `/transform` endpoint. This is a demo that uses an HMAC secret for signing in the browser — do not ship this pattern to production.
+Select text on any page and instantly rewrite, summarize, shorten, expand, or fix grammar — all in a clean, focused overlay. Right‑click or use shortcuts to improve your writing without leaving the page.
 
 Structure
 - `extension/manifest.json`: MV3 config (permissions, service worker, content script, options, commands)
@@ -38,4 +38,4 @@ Troubleshooting
 - Clipboard: Copy must be a user gesture from the overlay.
 
 Security Note
-- The HMAC secret is stored in `chrome.storage.local` for demo purposes only. In production, delegate signing to a trusted proxy or use a different auth flow.
+- For development, the options page can store an HMAC secret in `chrome.storage.local`. For production, use a trusted proxy or a different auth flow.

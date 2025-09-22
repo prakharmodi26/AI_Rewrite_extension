@@ -27,7 +27,10 @@
   <body>
     <div class="container">
       <div class="card">
-        <h1>AI Actions — Options</h1>
+        <h1 style="display:flex;align-items:center;gap:8px">
+          <img src="icons/pencil.svg" width="20" height="20" alt=""/>
+          AI Actions — Options
+        </h1>
         <div class="row">
           <label for="serverUrl">Server URL</label>
           <input id="serverUrl" type="text" placeholder="http://localhost:8080" />
@@ -36,16 +39,20 @@
         <div class="row">
           <label for="defaultTone">Default Rewrite Tone</label>
           <select id="defaultTone">
-            <option value="clear">Clear & Professional</option>
             <option value="friendly">Friendly</option>
-            <option value="concise">Concise</option>
             <option value="formal">Formal</option>
-            <option value="grammar">Grammar only</option>
+            <option value="confident">Confident</option>
+            <option value="persuasive">Persuasive</option>
+            <option value="casual">Casual</option>
           </select>
         </div>
         <div class="row">
           <label for="redact">Redact</label>
           <input id="redact" type="checkbox" />
+        </div>
+        <div class="row">
+          <label for="dismissOnOutsideClick">Dismiss on outside click</label>
+          <input id="dismissOnOutsideClick" type="checkbox" />
         </div>
         <div class="row">
           <label for="secret">HMAC Secret <span class="muted">(DEV-ONLY)</span></label>

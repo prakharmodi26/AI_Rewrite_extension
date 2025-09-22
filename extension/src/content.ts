@@ -1,5 +1,5 @@
-import { AiActionMessage, Task, Tone, TransformRequestBody, TransformResponseBody } from './types.js';
-import { getSettings } from './storage.js';
+import { AiActionMessage, Task, Tone, TransformRequestBody, TransformResponseBody, PercentLevel, SummaryLevel } from './types.js';
+import { getSettings, addHistoryItem } from './storage.js';
 import { hmacSha256Hex } from './hmac.js';
 
 function getSelectionInfo() {
@@ -20,6 +20,12 @@ function createOverlay(title: string) {
 
   const header = document.createElement('div');
   header.className = 'ai-overlay-header';
+  const icon = document.createElement('img');
+  icon.src = chrome.runtime.getURL('src/icons/pencil.svg');
+  icon.alt = '';
+  icon.width = 16;
+  icon.height = 16;
+  icon.style.marginRight = '8px';
   const h = document.createElement('div');
   h.className = 'ai-overlay-title';
   h.textContent = title;
@@ -28,7 +34,11 @@ function createOverlay(title: string) {
   close.setAttribute('aria-label', 'Close overlay');
   close.textContent = '✕';
   close.addEventListener('click', () => container.remove());
-  header.append(h, close);
+  const left = document.createElement('div');
+  left.style.display = 'flex';
+  left.style.alignItems = 'center';
+  left.append(icon, h);
+  header.append(left, close);
 
   const content = document.createElement('div');
   content.className = 'ai-overlay-content';
@@ -58,6 +68,35 @@ function createOverlay(title: string) {
   actions.append(copyBtn, toneBtn, replaceBtn, dismissBtn);
 
   container.append(header, content, actions);
+
+  // Draggable by header
+  let dragStartX = 0, dragStartY = 0, startLeft = 0, startTop = 0, dragging = false;
+  header.style.cursor = 'move';
+  header.addEventListener('mousedown', (e) => {
+    dragging = true;
+    const rect = container.getBoundingClientRect();
+    startLeft = rect.left + window.scrollX;
+    startTop = rect.top + window.scrollY;
+    dragStartX = e.clientX + window.scrollX;
+    dragStartY = e.clientY + window.scrollY;
+    e.preventDefault();
+  });
+  const onMove = (e: MouseEvent) => {
+    if (!dragging) return;
+    const dx = (e.clientX + window.scrollX) - dragStartX;
+    const dy = (e.clientY + window.scrollY) - dragStartY;
+    let left = startLeft + dx;
+    let top = startTop + dy;
+    const maxLeft = window.scrollX + window.innerWidth - container.offsetWidth - 10;
+    const maxTop = window.scrollY + window.innerHeight - container.offsetHeight - 10;
+    left = Math.max(window.scrollX + 10, Math.min(maxLeft, left));
+    top = Math.max(window.scrollY + 10, Math.min(maxTop, top));
+    container.style.left = `${left}px`;
+    container.style.top = `${top}px`;
+  };
+  const onUp = () => { dragging = false; };
+  document.addEventListener('mousemove', onMove, true);
+  document.addEventListener('mouseup', onUp, true);
 
   function onKey(e: KeyboardEvent) {
     if (e.key === 'Escape') {
@@ -116,9 +155,22 @@ function showToast(text: string, level: 'info' | 'error' = 'info') {
   setTimeout(() => t.remove(), 2200);
 }
 
-async function callServer(task: Task, tone: Tone, input: string) {
+async function callServer(task: Task, input: string, opts: { tone?: Tone; percent?: PercentLevel; summary_level?: SummaryLevel }) {
   const settings = await getSettings();
-  const body: TransformRequestBody = { task, tone, input, redact: settings.redact };
+  const body: TransformRequestBody = { task, input };
+  // redact optional
+  if (settings.redact) body.redact = true;
+  // include task-specific parameters
+  if (task === 'rewrite') {
+    if (!opts.tone) throw new Error('Tone is required for rewrite');
+    body.tone = opts.tone;
+  } else if (task === 'shorten' || task === 'expand') {
+    if (!opts.percent) throw new Error('Percent is required');
+    body.percent = opts.percent;
+  } else if (task === 'summarize') {
+    if (!opts.summary_level) throw new Error('Summary level is required');
+    body.summary_level = opts.summary_level;
+  }
   const bodyString = JSON.stringify(body);
   const ts = Date.now().toString();
   const nonce = crypto.randomUUID();
@@ -154,14 +206,21 @@ async function callServer(task: Task, tone: Tone, input: string) {
   return json.output;
 }
 
-async function handleAction(task: Task, tone?: Tone) {
+async function handleAction(task: Task, tone?: Tone, percent?: PercentLevel, summary_level?: SummaryLevel) {
   const { text, rect, range } = getSelectionInfo();
   if (!text || text.trim() === '') {
     showToast('No text selected');
     return;
   }
 
-  const title = task === 'summarize' ? 'Summarize (3–5 bullets)' : `Rewrite → ${tone === 'friendly' ? 'Friendly' : tone === 'concise' ? 'Concise' : tone === 'formal' ? 'Formal' : tone === 'grammar' ? 'Grammar only' : 'Clear & Professional'}`;
+  const titleMap: Record<Task, string> = {
+    rewrite: 'Rewrite',
+    grammar: 'Fix Grammar & Spelling',
+    summarize: 'Summarize',
+    shorten: 'Shorten',
+    expand: 'Expand',
+  };
+  const title = titleMap[task];
   const ui = createOverlay(title);
   positionOverlay(ui.container, rect);
   ui.container.focus();
@@ -171,9 +230,24 @@ async function handleAction(task: Task, tone?: Tone) {
 
   try {
     const settings = await getSettings();
-    const useTone: Tone = task === 'rewrite' ? (tone || settings.defaultTone) : 'clear';
-    const output = await callServer(task, useTone, text.slice(0, 10000));
+    let useTone: Tone | undefined = undefined;
+    let usePercent: PercentLevel | undefined = percent;
+    let useSummary: SummaryLevel | undefined = summary_level;
+    if (task === 'rewrite') {
+      useTone = tone || settings.defaultTone;
+    }
+    const clipped = text.slice(0, 10000);
+    const output = await callServer(task, clipped, { tone: useTone, percent: usePercent, summary_level: useSummary });
     ui.pre.textContent = output;
+    // Save to history
+    await addHistoryItem({
+      task,
+      output,
+      inputPreview: clipped.slice(0, 200),
+      tone: useTone,
+      percent: usePercent,
+      summary_level: useSummary,
+    });
 
     ui.copyBtn.addEventListener('click', async () => {
       await navigator.clipboard.writeText(output);
@@ -181,14 +255,16 @@ async function handleAction(task: Task, tone?: Tone) {
     });
 
     ui.dismissBtn.addEventListener('click', () => ui.container.remove());
-    // outside click dismiss
-    const onDocClick = (ev: MouseEvent) => {
-      if (!ui.container.contains(ev.target as Node)) {
-        ui.container.remove();
-        document.removeEventListener('mousedown', onDocClick, true);
-      }
-    };
-    setTimeout(() => document.addEventListener('mousedown', onDocClick, true), 0);
+    // outside click dismiss (toggleable)
+    if (settings.dismissOnOutsideClick !== false) {
+      const onDocClick = (ev: MouseEvent) => {
+        if (!ui.container.contains(ev.target as Node)) {
+          ui.container.remove();
+          document.removeEventListener('mousedown', onDocClick, true);
+        }
+      };
+      setTimeout(() => document.addEventListener('mousedown', onDocClick, true), 0);
+    }
 
     const isEditable = () => {
       const active = document.activeElement as HTMLElement | null;
@@ -240,16 +316,17 @@ async function handleAction(task: Task, tone?: Tone) {
       }
     });
 
-    // Change tone and re-run
+    // Change tone and re-run (rewrite only)
+    ui.toneBtn.style.display = task === 'rewrite' ? 'inline-block' : 'none';
     ui.toneBtn.addEventListener('click', async () => {
       const menu = document.createElement('div');
       menu.className = 'ai-tone-menu';
       const tones: { key: Tone; label: string }[] = [
-        { key: 'clear', label: 'Clear & Professional' },
-        { key: 'friendly', label: 'Friendly' },
-        { key: 'concise', label: 'Concise' },
         { key: 'formal', label: 'Formal' },
-        { key: 'grammar', label: 'Grammar only' },
+        { key: 'friendly', label: 'Friendly' },
+        { key: 'confident', label: 'Confident' },
+        { key: 'persuasive', label: 'Persuasive' },
+        { key: 'casual', label: 'Casual' },
       ];
       tones.forEach((t) => {
         const b = document.createElement('button');
@@ -258,8 +335,10 @@ async function handleAction(task: Task, tone?: Tone) {
           menu.remove();
           ui.pre.innerHTML = `<div class="ai-spinner" aria-label="Loading" role="status" aria-live="polite"></div>`;
           try {
-            const out2 = await callServer('rewrite', t.key, text.slice(0, 10000));
+            const clipped2 = text.slice(0, 10000);
+            const out2 = await callServer('rewrite', clipped2, { tone: t.key });
             ui.pre.textContent = out2;
+            await addHistoryItem({ task: 'rewrite', output: out2, inputPreview: clipped2.slice(0, 200), tone: t.key });
           } catch (err: any) {
             ui.pre.textContent = err?.message || 'Failed.';
             showToast(ui.pre.textContent, 'error');
@@ -288,7 +367,7 @@ async function handleAction(task: Task, tone?: Tone) {
 
 chrome.runtime.onMessage.addListener((msg: AiActionMessage | { type: 'AI_TOAST'; text: string; level?: 'info' | 'error' }, _sender, _sendResponse) => {
   if (msg.type === 'AI_ACTION') {
-    handleAction(msg.task, msg.tone as Tone);
+    handleAction(msg.task, msg.tone as Tone, msg.percent as PercentLevel, msg.summary_level as SummaryLevel);
   } else if (msg.type === 'AI_TOAST') {
     showToast(msg.text, msg.level || 'info');
   }

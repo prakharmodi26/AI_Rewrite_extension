@@ -13,6 +13,7 @@ async function init() {
   const serverUrl = document.getElementById('serverUrl') as HTMLInputElement;
   const defaultTone = document.getElementById('defaultTone') as HTMLSelectElement;
   const redact = document.getElementById('redact') as HTMLInputElement;
+  const dismissOnOutsideClick = document.getElementById('dismissOnOutsideClick') as HTMLInputElement;
   const secret = document.getElementById('secret') as HTMLInputElement;
   const installId = document.getElementById('installId') as HTMLInputElement;
   const regen = document.getElementById('regen') as HTMLButtonElement;
@@ -23,8 +24,11 @@ async function init() {
 
   const settings = await getSettings();
   serverUrl.value = settings.serverUrl;
-  defaultTone.value = settings.defaultTone;
+  // If previous stored value is not in the new list, fall back to 'friendly'
+  const available = Array.from(defaultTone.options).map(o => o.value);
+  defaultTone.value = available.includes(settings.defaultTone) ? settings.defaultTone : 'friendly';
   redact.checked = settings.redact;
+  dismissOnOutsideClick.checked = !!settings.dismissOnOutsideClick;
   secret.value = settings.secret || '';
   installId.value = settings.installId;
 
@@ -45,7 +49,7 @@ async function init() {
   });
 
   save.addEventListener('click', async () => {
-    await setSyncSettings({ serverUrl: serverUrl.value, defaultTone: defaultTone.value as any, redact: redact.checked });
+  await setSyncSettings({ serverUrl: serverUrl.value, defaultTone: defaultTone.value as any, redact: redact.checked, dismissOnOutsideClick: dismissOnOutsideClick.checked });
     await setLocalSettings({ secret: secret.value });
     msg.textContent = 'Saved.';
     setTimeout(() => (msg.textContent = ''), 1200);

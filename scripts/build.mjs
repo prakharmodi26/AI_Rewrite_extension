@@ -1,6 +1,7 @@
 import { build, context } from 'esbuild';
 import { promises as fs } from 'fs';
 import path from 'path';
+import sharp from 'sharp';
 
 const root = path.resolve(process.cwd());
 const outdir = path.join(root, 'dist');
@@ -15,13 +16,33 @@ async function copyStatic() {
   const manifestDest = path.join(outdir, 'manifest.json');
   await fs.copyFile(manifestSrc, manifestDest);
 
-  // Copy options.html and overlay.css
+  // Copy options.html, popup.html and overlay.css
   await fs.mkdir(path.join(outdir, 'src'), { recursive: true });
-  for (const f of ['options.html', 'overlay.css']) {
+  for (const f of ['options.html', 'popup.html', 'overlay.css']) {
     const src = path.join(srcdir, f);
     const dest = path.join(outdir, 'src', f);
     await fs.copyFile(src, dest);
   }
+
+  // Copy icons
+  const iconsSrcDir = path.join(srcdir, 'icons');
+  try {
+    const entries = await fs.readdir(iconsSrcDir, { withFileTypes: true });
+    await fs.mkdir(path.join(outdir, 'src', 'icons'), { recursive: true });
+    for (const e of entries) {
+      if (e.isFile()) {
+        await fs.copyFile(path.join(iconsSrcDir, e.name), path.join(outdir, 'src', 'icons', e.name));
+      }
+    }
+
+    // Generate PNGs from SVG if not present
+    const svgPath = path.join(iconsSrcDir, 'pencil.svg');
+    const targets = [16, 32, 48, 128];
+    for (const size of targets) {
+      const outPng = path.join(outdir, 'src', 'icons', `icon-${size}.png`);
+      await sharp(svgPath).resize(size, size).png().toFile(outPng);
+    }
+  } catch {}
 }
 
 async function run({ watch } = { watch: false }) {
@@ -40,6 +61,7 @@ async function run({ watch } = { watch: false }) {
     path.join(srcdir, 'background.ts'),
     path.join(srcdir, 'content.ts'),
     path.join(srcdir, 'options.ts'),
+    path.join(srcdir, 'popup.ts'),
   ];
 
   if (watch) {
