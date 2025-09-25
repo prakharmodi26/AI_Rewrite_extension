@@ -95,6 +95,10 @@ function createOverlay(title) {
   header.className = "ai-overlay-header";
   const icon = document.createElement("img");
   icon.src = chrome.runtime.getURL("src/icons/pencil.svg");
+  icon.addEventListener("error", () => {
+    const fallback = chrome.runtime.getURL("src/icons/icon-32.png");
+    if (icon.src !== fallback) icon.src = fallback;
+  });
   icon.alt = "";
   icon.width = 16;
   icon.height = 16;
@@ -260,7 +264,21 @@ async function callServer(task, input, opts) {
   return json.output;
 }
 async function handleAction(task, tone, percent, summary_level) {
-  const { text, rect, range } = getSelectionInfo();
+  const selectionInfo = getSelectionInfo();
+  let { text, rect, range } = selectionInfo;
+  const activeAtInvoke = document.activeElement;
+  let inputSelection = null;
+  if (activeAtInvoke instanceof HTMLInputElement || activeAtInvoke instanceof HTMLTextAreaElement) {
+    inputSelection = {
+      start: activeAtInvoke.selectionStart ?? 0,
+      end: activeAtInvoke.selectionEnd ?? 0
+    };
+    if (!text && inputSelection.start !== inputSelection.end) {
+      text = activeAtInvoke.value.slice(inputSelection.start, inputSelection.end);
+      const r = activeAtInvoke.getBoundingClientRect();
+      rect = r;
+    }
+  }
   if (!text || text.trim() === "") {
     showToast("No text selected");
     return;
@@ -310,51 +328,42 @@ async function handleAction(task, tone, percent, summary_level) {
       };
       setTimeout(() => document.addEventListener("mousedown", onDocClick, true), 0);
     }
-    const isEditable = () => {
-      const active = document.activeElement;
-      if (!active) return false;
-      if (active.value !== void 0 || active.value !== void 0) return true;
-      if (active.isContentEditable) return true;
-      return false;
-    };
-    const updateReplaceState = () => {
-      ui.replaceBtn.disabled = !isEditable();
-      ui.replaceBtn.setAttribute("aria-disabled", ui.replaceBtn.disabled ? "true" : "false");
-    };
-    updateReplaceState();
-    window.addEventListener("focusin", updateReplaceState);
+    const canReplace = !!((activeAtInvoke instanceof HTMLInputElement || activeAtInvoke instanceof HTMLTextAreaElement) && inputSelection && inputSelection.start !== inputSelection.end) || !!(activeAtInvoke && activeAtInvoke.isContentEditable && range && !range.collapsed);
+    ui.replaceBtn.disabled = !canReplace;
+    ui.replaceBtn.setAttribute("aria-disabled", ui.replaceBtn.disabled ? "true" : "false");
     ui.replaceBtn.addEventListener("click", async () => {
-      const active = document.activeElement;
-      if (!active) {
-        await navigator.clipboard.writeText(output);
-        showToast("Copied (no editable target)", "info");
+      const target = activeAtInvoke;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+        const start = inputSelection ? inputSelection.start : target.selectionStart ?? 0;
+        const end = inputSelection ? inputSelection.end : target.selectionEnd ?? 0;
+        const val = target.value;
+        target.focus();
+        target.value = val.slice(0, start) + output + val.slice(end);
+        const pos = start + output.length;
+        target.selectionStart = target.selectionEnd = pos;
+        target.dispatchEvent(new Event("input", { bubbles: true }));
+        showToast("Replaced", "info");
         return;
       }
-      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
-        const start = active.selectionStart ?? 0;
-        const end = active.selectionEnd ?? 0;
-        const val = active.value;
-        active.value = val.slice(0, start) + output + val.slice(end);
-        const pos = start + output.length;
-        active.selectionStart = active.selectionEnd = pos;
-        active.dispatchEvent(new Event("input", { bubbles: true }));
-      } else if (active && active.isContentEditable) {
+      if (target && target.isContentEditable) {
+        target.focus();
         const sel = window.getSelection();
-        if (sel && sel.rangeCount > 0) {
-          const r = sel.getRangeAt(0);
-          r.deleteContents();
-          r.insertNode(document.createTextNode(output));
-        } else if (range) {
+        sel?.removeAllRanges();
+        if (range) {
+          try {
+            sel?.addRange(range);
+          } catch {
+          }
+        }
+        if (range) {
           range.deleteContents();
           range.insertNode(document.createTextNode(output));
-        } else {
-          await navigator.clipboard.writeText(output);
-          showToast("Copied (no selection)", "info");
+          showToast("Replaced", "info");
+          return;
         }
-      } else {
-        await navigator.clipboard.writeText(output);
-        showToast("Copied (no editable target)", "info");
       }
+      await navigator.clipboard.writeText(output);
+      showToast("Copied (no original selection)", "info");
     });
     ui.toneBtn.style.display = task === "rewrite" ? "inline-block" : "none";
     ui.toneBtn.addEventListener("click", async () => {

@@ -53,4 +53,17 @@
       "description": "AI Summarize (3–5 bullets)"
     }
   }
+  ,
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/icons/icon-16.png",
+        "src/icons/icon-32.png",
+        "src/icons/icon-48.png",
+        "src/icons/icon-128.png",
+        "src/icons/pencil.svg"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

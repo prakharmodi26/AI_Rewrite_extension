@@ -21,7 +21,12 @@ function createOverlay(title: string) {
   const header = document.createElement('div');
   header.className = 'ai-overlay-header';
   const icon = document.createElement('img');
+  // Try SVG first; if it fails (path/resource issue) fall back to PNG
   icon.src = chrome.runtime.getURL('src/icons/pencil.svg');
+  icon.addEventListener('error', () => {
+    const fallback = chrome.runtime.getURL('src/icons/icon-32.png');
+    if (icon.src !== fallback) icon.src = fallback;
+  });
   icon.alt = '';
   icon.width = 16;
   icon.height = 16;
@@ -207,7 +212,23 @@ async function callServer(task: Task, input: string, opts: { tone?: Tone; percen
 }
 
 async function handleAction(task: Task, tone?: Tone, percent?: PercentLevel, summary_level?: SummaryLevel) {
-  const { text, rect, range } = getSelectionInfo();
+  // Capture selection & editable context BEFORE injecting overlay (which can steal focus)
+  const selectionInfo = getSelectionInfo();
+  let { text, rect, range } = selectionInfo;
+  const activeAtInvoke = document.activeElement as HTMLElement | null;
+  let inputSelection: { start: number; end: number } | null = null;
+  if (activeAtInvoke instanceof HTMLInputElement || activeAtInvoke instanceof HTMLTextAreaElement) {
+    inputSelection = {
+      start: activeAtInvoke.selectionStart ?? 0,
+      end: activeAtInvoke.selectionEnd ?? 0,
+    };
+    if (!text && inputSelection.start !== inputSelection.end) {
+      // If text selection API didn't capture (e.g., input), derive from value slice
+      text = activeAtInvoke.value.slice(inputSelection.start, inputSelection.end);
+      const r = activeAtInvoke.getBoundingClientRect();
+      rect = r; // approximate anchor
+    }
+  }
   if (!text || text.trim() === '') {
     showToast('No text selected');
     return;
@@ -266,54 +287,48 @@ async function handleAction(task: Task, tone?: Tone, percent?: PercentLevel, sum
       setTimeout(() => document.addEventListener('mousedown', onDocClick, true), 0);
     }
 
-    const isEditable = () => {
-      const active = document.activeElement as HTMLElement | null;
-      if (!active) return false;
-      if ((active as HTMLInputElement).value !== undefined || (active as HTMLTextAreaElement).value !== undefined) return true;
-      if (active.isContentEditable) return true;
-      return false;
-    };
-
-    const updateReplaceState = () => {
-      ui.replaceBtn.disabled = !isEditable();
-      ui.replaceBtn.setAttribute('aria-disabled', ui.replaceBtn.disabled ? 'true' : 'false');
-    };
-    updateReplaceState();
-    window.addEventListener('focusin', updateReplaceState);
+    // Determine if we have a valid replacement context captured BEFORE overlay stole focus
+    const canReplace = !!(
+      (activeAtInvoke instanceof HTMLInputElement || activeAtInvoke instanceof HTMLTextAreaElement) && inputSelection && inputSelection.start !== inputSelection.end
+    ) || !!(activeAtInvoke && activeAtInvoke.isContentEditable && range && !range.collapsed);
+    ui.replaceBtn.disabled = !canReplace;
+    ui.replaceBtn.setAttribute('aria-disabled', ui.replaceBtn.disabled ? 'true' : 'false');
 
     ui.replaceBtn.addEventListener('click', async () => {
-      const active = document.activeElement as HTMLElement | null;
-      if (!active) {
-        await navigator.clipboard.writeText(output);
-        showToast('Copied (no editable target)', 'info');
+      // Prefer the element that had focus when action invoked
+      const target = activeAtInvoke as HTMLElement | null;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+        const start = inputSelection ? inputSelection.start : (target.selectionStart ?? 0);
+        const end = inputSelection ? inputSelection.end : (target.selectionEnd ?? 0);
+        const val = target.value;
+        target.focus();
+        target.value = val.slice(0, start) + output + val.slice(end);
+        const pos = start + output.length;
+        target.selectionStart = target.selectionEnd = pos;
+        target.dispatchEvent(new Event('input', { bubbles: true }));
+        showToast('Replaced', 'info');
         return;
       }
-      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
-        const start = active.selectionStart ?? 0;
-        const end = active.selectionEnd ?? 0;
-        const val = active.value;
-        active.value = val.slice(0, start) + output + val.slice(end);
-        // set caret after inserted text
-        const pos = (start + output.length);
-        active.selectionStart = active.selectionEnd = pos;
-        active.dispatchEvent(new Event('input', { bubbles: true }));
-      } else if (active && active.isContentEditable) {
+      if (target && target.isContentEditable) {
+        target.focus();
         const sel = window.getSelection();
-        if (sel && sel.rangeCount > 0) {
-          const r = sel.getRangeAt(0);
-          r.deleteContents();
-          r.insertNode(document.createTextNode(output));
-        } else if (range) {
+        sel?.removeAllRanges();
+        if (range) {
+          // Use original captured range
+            try {
+              sel?.addRange(range);
+            } catch {}
+        }
+        if (range) {
           range.deleteContents();
           range.insertNode(document.createTextNode(output));
-        } else {
-          await navigator.clipboard.writeText(output);
-          showToast('Copied (no selection)', 'info');
+          showToast('Replaced', 'info');
+          return;
         }
-      } else {
-        await navigator.clipboard.writeText(output);
-        showToast('Copied (no editable target)', 'info');
       }
+      // Fallback: clipboard copy if we can't replace directly
+      await navigator.clipboard.writeText(output);
+      showToast('Copied (no original selection)', 'info');
     });
 
     // Change tone and re-run (rewrite only)
